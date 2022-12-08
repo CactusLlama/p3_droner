@@ -1,6 +1,5 @@
 import math
 from djitellopy import tello
-import KeyPressModule as kp
 import numpy as np
 import cv2
 from time import sleep
@@ -32,65 +31,11 @@ print("total distance from start to distination:", total_distance)
 
 plot_point = [dist[0]+500, -1*dist[1]+500]
 
-kp.init()
 
 # me = tello.Tello()
 # me.connect()
 
 points = [(0, 0), (0, 0)]
-
-
-def getKeyboardInput():
-    lr, fb, ud, yv, tl = 0, 0, 0, 0, 0
-    speed = 15
-    aspeed = 50
-
-    global x, y, yaw, a
-    d = 0
-
-    if kp.getKey("LEFT"):
-        lr = -speed
-        d = distInterval
-        a = -180
-
-    elif kp.getKey("RIGHT"):
-        lr = speed
-        d = -distInterval
-        a = 180
-
-    if kp.getKey("UP"):
-        fb = speed
-        d = distInterval
-        a = 270
-
-    elif kp.getKey("DOWN"):
-        fb = -speed
-        d = -distInterval
-        a = -90
-    if kp.getKey("w"):
-        ud = speed
-
-    elif kp.getKey("s"):
-        ud = -speed
-
-    if kp.getKey("a"):
-        yv = aspeed
-        yaw -= rotationInterval
-    elif kp.getKey("d"):
-        yv = -aspeed
-        yaw += rotationInterval
-
-    if kp.getKey("q"):
-        tl = 1
-    elif kp.getKey("e"):
-        tl = 2
-
-    sleep(interval)
-    a += yaw
-    x += int(d * math.cos(math.radians(a)))
-    y += int(d * math.sin(math.radians(a)))
-
-    return [lr, fb, ud, yv, tl, x, y]
 
 
 
@@ -107,7 +52,7 @@ if __name__ == "__main__":
     vals = [0, 0, 0, 0, 0, x, y]
     # me.takeoff()
     # sleep(4)
-    keyboard_command = getKeyboardInput()
+
     while True:
         # print(me.get_battery())
         print(vals)
@@ -159,3 +104,10 @@ if __name__ == "__main__":
         drawPoints(img, points)
         cv2.imshow("Output", img)
         cv2.waitKey(1)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            # me.land()
+            print("landing")
+            break
+
+
