@@ -5,8 +5,7 @@ import cv2
 import random as rng
 from djitellopy import Tello
 import time
-from imutils import paths
-import imutils
+
 
 q = queue.Queue()
 NUM_OF_FRAMES = 24
