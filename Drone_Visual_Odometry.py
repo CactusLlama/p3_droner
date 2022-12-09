@@ -105,46 +105,19 @@ if __name__ == '__main__':
 
     # Vi kan lave områder på left fra (0,0) -> (720,320)   right fra (0,640) -> (720,960)   top fra (0,320)-> (240,640)    mid fra (240, 320) -> (480,640)   bot fra (480,320) -> (720,640)
 
-    drone = Tello()
-    drone.connect()
-    # cap = cv2.VideoCapture(0)
-    drone.streamon()
+    #Følgene linje kan
+    drone = Tello(); drone.connect(); drone.streamon(); cap = drone.get_video_capture()
+
+    #cap = cv2.VideoCapture(0)
+
+
     rng.seed(1234)
     currentframe = 1
     rectHandlerList = []
     rectHandlerList.clear()
     # valg = input("Valg af program \n1 - Brug af hjemmelavet\n2 - Brug af FastFeatureDetector\n3 - Brug af ANDET ")
     # print(valg)
-    valg = '4'
-    if valg == '2':
-        detector = cv2.FastFeatureDetector_create()
-        # detector.set
-        detector.setThreshold(25)
-
-    if valg == '3':
-        orb = cv2.ORB_create()
-
-    if valg == '4':
-        net = cv2.dnn.readNetFromDarknet('yolov3.cfg', 'yolov3.weights')
-        net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-        ln = net.getLayerNames()
-
-        cap = drone.get_video_capture()
-        ret, frame = cap.read(0)
-
-
-        blob = cv2.dnn.blobFromImage(frame,1/255.0, (416,416), swapRB=True, crop=False)
-
-        net.setInput(blob)
-        t0 = time.time()
-        outputs = net.forward(ln)
-        t = time.time()
-        print("time "+ str(t) + "t0 "+ str(t0))
-      #  cv2.displayOverlay('window', f'forward propagation time={t-t0}')
-        cv2.imshow('window', frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        exit(0)
+    valg = '1'
 
 
 
@@ -157,54 +130,23 @@ if __name__ == '__main__':
     #  exit()
     fullrectList = []  # list til at håndtere hver frames liste. kan muligvis gøres smartere
     while True:
-        # Får fat i en frame fra dronen
-        cap = drone.get_video_capture()
+        # Får fat i en frame fra dronen, enten via drone eller webcam
         ret, frame = cap.read(0)
 
         # vi laver en liste med rektangler, dette skal gøres hver frame
         rectList = []
 
-        # buffer til at få hele billedet
-        if not ret:
-            print("bygger stream igen")
-            cap.release()
-            cap = drone.get_video_capture()
-        # Vi bruger den hjemmelavede
-        if valg == '1':
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # thresh2 = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV)[1]
-            # blurred = cv2.GaussianBlur(gray,(7,7),0)
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 23,
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 23,
                                            10)  # 5th parameter = pixel neighbourhood size, 6th parameter = finetuning     #note, vi kan fra tælle alle firkanter mindre end X
             # thresh3 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 23,
             #                               10)  # 5th parameter = pixel neighbourhood size, 6th parameter = finetuning     #note, vi kan fra tælle alle firkanter mindre end X
-            frame1, rectList = findcontours(thresh, frame, rectList)
-            cv2.imshow("adaptive - MEAN", frame1)  # MEAN fungerer umiddelbart bedst
+        frame1, rectList = findcontours(thresh, frame, rectList)
+        cv2.imshow("adaptive - MEAN", frame1)  # MEAN fungerer umiddelbart bedst
 
-            if (rectList != 0):
-                rectHandlerList.append(rectList) #burde tilføje listen til den korrekte
-
-            # frame2 = findcontours(thresh2, frame)
-            # cv2.imshow("binary", frame2)
-            # frame3 = findcontours(thresh3, frame)
-            # cv2.imshow("adaptive - gauss", frame3)
-        if valg == '2':
-            # vi finder keypoints
-            kp = detector.detect(frame, None)  # der findes flere typer som Harris, DENSE og GFTT
-            # cv2.imshow('Keypoints',kp)
-            # TODO kan keypoints og firkanterne blandes, således at man har en nogenlunde ide om hvor at der er et object og når man kommer tæt på bruges keypoints til at komme tæt på?
-
-
-            result = cv2.drawKeypoints(frame, kp, None, color=(255, 0, 0))
-
-        if valg == '3':
-            kp = orb.detect(frame, None)
-            kp, des = orb.compute(frame, kp)
-            result = cv2.drawKeypoints(frame, kp, None, color=(0, 255, 0), flags=0)
-
-        # Hvis billedet på skærmen
-        # cv2.imshow('frame', result)
-        # quit med Q
+        if (rectList != 0):
+            rectHandlerList.append(rectList) #burde tilføje listen til den korrekte
 
         if currentframe == NUM_OF_FRAMES:
             # gennemgå listen med recthandler
