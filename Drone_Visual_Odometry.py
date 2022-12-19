@@ -65,17 +65,14 @@ def findcontours(thres, fram, rectList):
 
 def rectHandler():
     # TODO Lav denne håndtering af de tre frames trekant og lav et forslag til hvordan den skal dreje.
-
     # Hvordan gør sammenligner vi trekanterne?
     # lav kun denne hvis der er noget i vejen
-    left = 0;
-    right = 0;
+    left = 0
+    right = 0
     for i in range(currentframe - 1):
-
-
-       # print(temp[0].w)
-       # if len(temp) > 0: temp.pop(0)
-       # print(type(temp))
+        # print(temp[0].w)
+        # if len(temp) > 0: temp.pop(0)
+        # print(type(temp))
         
         for j in range(len(rectHandlerList[i])):
             # find centrum af firkanten
@@ -99,7 +96,6 @@ def rectHandler():
 
 
 if __name__ == '__main__':
-
     # Størrelse på drone billedet er 720x960
 
     # Vi kan lave områder på left fra (0,0) -> (720,320)   right fra (0,640) -> (720,960)   top fra (0,320)-> (240,640)    mid fra (240, 320) -> (480,640)   bot fra (480,320) -> (720,640)

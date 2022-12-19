@@ -60,7 +60,7 @@ if __name__ == "__main__":
         cv2.imshow("Output", img)
         cv2.waitKey(1)
 
-        print(me.get_battery())
+        # print(me.get_battery())
         print(vals)
 
         # Calculate distance from drone location to destination for x and y
