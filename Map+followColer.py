@@ -12,7 +12,7 @@ deadZone = 100
 ######################################################################
 forwardS = 200/10  # Forward Speed in cm/s (at the speed 15cm/s = 11.7cm/10s) TEST THIS!
 rotationS = 360/10  # Rotation speed in degrees/second (10s to rotate 360 degrees) (at 50d/s)
-interval = 0.25
+interval = 0.05
 
 distInterval = forwardS*interval  # 20*0.25= 5
 rotationInterval = rotationS*interval  # 36 * 0.25 = 9 (this is only used for keyboard input)
@@ -176,7 +176,8 @@ def draw_points(img, points):
 x = 500  # x start coordinate (500 since it´s the middle of the display width)
 y = 500  # y start coordinate (500 since it´s the middle of the display height)
 a = 0   # a is the angle from the y-axis in the positive direction when set to 270 degrees
-yaw = 0 # this is the angle offset from the current direction of the drone
+yaw = 0  # this is the angle offset from the current direction of the drone
+startRoute = 0
 dest = [int, int]
 
 print("Input the point where the drone has to go (in cm):\n")
@@ -193,10 +194,13 @@ print("total distance from start to distination:", total_distance)
 # Enable variables and drone take of
 plot_point = [dest[0] + 500, -1 * dest[1] + 500]  # Destination point to plot in the window
 points = [(0, 0), (0, 0)]  # Current location and previous locations used for plotting
-vals = [x, y]  # vals[0] used as the speed, x and y are used as plotting points for drones current location
+vals = [x, y]  # y are used as plotting points for drones current location
 me.for_back_velocity = 0
+x = 0  # counter for updating map
 
 while True:
+    print(me.get_battery())
+
     # GET THE IMAGE FROM TELLO
     frame_read = me.get_frame_read()
     myFrame = frame_read.frame
@@ -229,77 +233,90 @@ while True:
 
     if cv2.waitKey(1) & 0xFF == ord('f'):
         startCounter = 0
+        startRoute = 1
 
     # Display map, mapping drone on screen
     img_map = np.zeros((1000, 1000, 3), np.uint8)
     points.append((vals[0], vals[1]))
     cv2.circle(img_map, plot_point, 5, (0, 255, 0), cv2.FILLED)
     draw_points(img_map, points)
-    cv2.imshow("Output", img_map)
-    cv2.waitKey(1)
 
     # Calculate distance from drone location to destination for x and y
-    location = [x, y]
     destination = [dest[0], dest[1]]
-    destination_minus_location = [dest[0] - (location[0] - 500), dest[1] - (location[1] - 500)]
+    destination_minus_location = [dest[0] - (vals[0] - 500), dest[1] - (vals[1] - 500)]
 
     # Calculate angle differences current angle(forward) to angle towards destination
     ang_adjust_radians = math.atan2(destination_minus_location[0], destination_minus_location[1])
     ang_adjust_degrees = (180 / math.pi) * ang_adjust_radians
+    print(destination_minus_location)
+    print(ang_adjust_degrees)
 
     ################# FLIGHT
     if startCounter == 0:
         me.takeoff()
-        startCounter = 2
+        startCounter = 1
 
-    #Deadzone removed and yaw reversed
-    if dir == 1:
-        me.left_right_velocity = 17
-        distance = distInterval
-        yaw = 180
-    elif dir == 2:
-        me.left_right_velocity = -17
-        distance = distInterval
-        yaw = -180
-    elif dir == 3:
-        me.up_down_velocity= 60
-    elif dir == 4:
-        me.up_down_velocity= -60
-    elif startCounter == 2:
-        # Change angle so drone points towards the destination point
-        if yaw != ang_adjust_degrees and ang_adjust_degrees > 0:
-            # me.rotate_clockwise(int(ang_adjust_degrees))
-            sleep(4)
-            yaw = ang_adjust_degrees
-        elif yaw != ang_adjust_degrees and ang_adjust_degrees < 0:
-            # me.rotate_counter_clockwise(int(-ang_adjust_degrees))
-            sleep(4)
-            yaw = ang_adjust_degrees
-
-        # Fly forward at the speed of 15 cm/s until destination is reached
-        distance = 0
-        if vals[1] >= plot_point[0] - 3 and vals[1] <= plot_point[0] + 3 and vals[2] >= plot_point[1] - 3 and vals[2] <= plot_point[1] + 3:
-            print("Landing")
-            # me.land()
-        else:
-            # me.for_back_velocity = 17
+    distance = 0  # initialize distance for mapping
+    if startRoute == 1:
+        #Deadzone removed and yaw reversed
+        if dir == 1:
+            me.for_back_velocity = 0
+            me.left_right_velocity = 15
             distance = distInterval
-            a = 270
+            a = 180
+        elif dir == 2:
+            me.for_back_velocity = 0
+            me.left_right_velocity = -15
+            distance = distInterval
+            a = -180
+        # elif dir == 3:
+            # me.up_down_velocity= 60
+        # elif dir == 4:
+            # me.up_down_velocity= -60
+        else:
+            me.left_right_velocity = 0
 
-        # update map of drones current location
-        a += yaw
-        vals[0] += int(distance * math.cos(math.radians(a)))
-        vals[1] += int(distance * math.sin(math.radians(a)))
+            # Change angle so drone points towards the destination point
+            if yaw != ang_adjust_degrees and ang_adjust_degrees > 1:
+                me.rotate_clockwise(int(ang_adjust_degrees))
+                sleep(4)
+                yaw = ang_adjust_degrees
+            elif yaw != ang_adjust_degrees and ang_adjust_degrees < 1:
+                me.rotate_counter_clockwise(int(-ang_adjust_degrees))
+                sleep(4)
+                yaw = ang_adjust_degrees
+
+            # Fly forward at the speed of 15 cm/s until destination is reached
+            if vals[0] >= plot_point[0] - 3 and vals[0] <= plot_point[0] + 3 and vals[1] >= plot_point[1] - 3 and vals[1] <= plot_point[1] + 3:
+                print("Landing")
+                me.land()
+            else:
+                me.for_back_velocity = 15
+                distance = distInterval
+                a = 270
     else:
-        me.left_right_velocity = 0; me.for_back_velocity = 0; me.up_down_velocity = 0; me.yaw_velocity = 0
+        me.left_right_velocity = 0
+        me.for_back_velocity = 0
+        me.up_down_velocity = 0
+        me.yaw_velocity = 0
 
-    # SEND VELOCITY VALUES TO TELLO
+
     if me.send_rc_control:
         me.send_rc_control(me.left_right_velocity, me.for_back_velocity, me.up_down_velocity, me.yaw_velocity)
     print(dir)
+    # update map of drones current location
 
+    x += 1
+    if x == 2 or dir == 1 or dir == 2:
+        a += yaw
+        vals[0] += int(distance * math.cos(math.radians(a)))
+        vals[1] += int(distance * math.sin(math.radians(a)))
+        x = 0
+
+    # SEND VELOCITY VALUES TO TELLO
     stack = stackImages(0.9, ([img, result], [imgDil, imgContour]))
     cv2.imshow('Horizontal Stacking', stack)
+    cv2.imshow("Output", img_map)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         me.land()
