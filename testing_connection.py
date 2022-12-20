@@ -18,9 +18,9 @@ def connect():
 
 
 if __name__ == "__main__":
-
+    number_of_connections = input("How many times should the test be run?")
     #create the thread a 100 times and keep running it until it has finished. when all 100 threads have happened sum up the queue and display it
-    for i in range(100):
+    for i in range(int(number_of_connections)):
         test = th.Thread(target=connect, args=())
         test.start()
         while True:
