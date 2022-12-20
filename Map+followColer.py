@@ -243,21 +243,34 @@ while True:
     cv2.circle(img_map, plot_point, 5, (0, 255, 0), cv2.FILLED)
     draw_points(img_map, points)
 
-    # Calculate distance from drone location to destination for x and y
-    destination = [dest[0], dest[1]]
-    destination_minus_location = [dest[0] - (vals[0] - 500), dest[1] - (vals[1] - 500)]
-
-    # Calculate angle differences current angle(forward) to angle towards destination
-    ang_adjust_radians = math.atan2(destination_minus_location[0], destination_minus_location[1])
-    ang_adjust_degrees = (180 / math.pi) * ang_adjust_radians
-    # print(destination_minus_location)
-    # print(ang_adjust_degrees)
-
     ################# FLIGHT
     if startCounter == 0:
+        # Calculate distance from drone location to destination for x and y
+        destination = [dest[0], dest[1]]
+        destination_minus_location = [dest[0] - (vals[0] - 500), dest[1] - (vals[1] - 500)]
+
+        # Calculate angle differences current angle(forward) to angle towards destination
+        ang_adjust_radians = math.atan2(destination_minus_location[0], destination_minus_location[1])
+        ang_adjust_degrees = (180 / math.pi) * ang_adjust_radians
+        print("dest-location", destination_minus_location)
+        print("start up adjust angle", ang_adjust_degrees)
+        print("start yaw", yaw)
         me.takeoff()
-        sleep(5)
+        sleep(4)
         me.move_up(20)
+
+        # Change angle so drone points towards the destination point
+        if yaw != ang_adjust_degrees and ang_adjust_degrees > 0:
+            me.rotate_clockwise(int(ang_adjust_degrees))
+            sleep(6)
+            print("rotated?")
+            yaw = ang_adjust_degrees
+        elif yaw != ang_adjust_degrees and ang_adjust_degrees < 0:
+            me.rotate_counter_clockwise(int(-ang_adjust_degrees))
+            sleep(6)
+            print("rotated?")
+            yaw = ang_adjust_degrees
+
         startCounter = 1
 
     distance = 0  # initialize distance for mapping
