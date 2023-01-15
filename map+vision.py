@@ -1,404 +1,361 @@
-import math
-import queue
-
-from djitellopy import tello
-import numpy as np
+from djitellopy import Tello
 import cv2
+import numpy as np
+import math
 from time import sleep
 
-import threading as th #for doing driving and vision at the same time
-import multiprocessing as mp
 
+#############################Parameters#########################################
+imageWidth = 640  # The image width
+imageHeight = 480  # The image height
+margin = 100
 
-
-############### Parameters for Threading ##############
-q = queue.Queue()
-
-
-################ Parameters ##################
 forwardS = 200/10  # Forward Speed in cm/s (at the speed 15cm/s = 11.7cm/10s) TEST THIS!
 rotationS = 360/10  # Rotation speed in degrees/second (10s to rotate 360 degrees) (at 50d/s)
-interval = 0.25
+interval = 0.14128
 
-distInterval = forwardS*interval  # 20*0.25= 5
+distInterval = forwardS*interval  # 20*0.14128 = 2.8256
 rotationInterval = rotationS*interval  # 36 * 0.25 = 9 (this is only used for keyboard input)
+############################################
 
-########### VISION Parameters #################
-NUM_OF_FRAMES = 24
-FRAME_CENT_X = 480
-AVOID_FLAG = 0
-rectHandlerList = []
-currentframe = 0
-##############################################
+startCounter = 1
 
-################ Functions From Vision ############
-class Rect:
-    def __init__(self, x, y, w, h):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
+# CONNECT TO TELLO
+drone = Tello()
+drone.connect()
+drone.forBackSpeed = 0
+drone.leftRightSpeed = 0
 
-    def __str__(self):
-        return f"Cord:({self.x},{self.y}) Height: {self.h}  Width: {self.w}"
-
-    def getx(self):
-        return self.x
-
-    def gety(self):
-        return self.y
-
-    def geth(self):
-        return self.h
-
-    def getw(self):
-        return self.w
+# Not used yet
+drone.upDownSpeed = 0
+drone.yawSpeed = 0
+drone.speed = 0
 
 
-def findcontours(thres, fram, rectList):
-    contour = cv2.findContours(thres, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    global AVOID_FLAG
-    contour = contour[0] if len(contour) == 2 else contour[1]
-    for cntr in contour:
-        x, y, w, h = cv2.boundingRect(cntr)
+print(drone.get_battery())
 
-        if ((w) * (h) > 100) and h > 50 and w > 50:
-            # print(str((w)*(h)))
-            cv2.rectangle(fram, (x, y), (x + w, y + h), (0, 0, 255), 2)  # selve firkanten sættes i en liste
+drone.streamoff()
+drone.streamon()
+########################
 
-            # indsæt område til at finde ud af om firkanten er i ROI (aka midterområdet)
-
-            if x <= 580 <= x + w and y <= 360 <= y + h and h * w >= 160:
-            #if (320 < x < 640 or 320 < x+h < 640) and (240 < y < 480 or 240 < y+h < 480):
-                # vi har en firkant som er større end midterfirkanten, så vi slår recthandler til
-                AVOID_FLAG = 1
-                # print("AVOID_FLAG == 1")
-                # vi tilføjer kun firkant til listen hvis denne har en chance for at være stor nok til at være i vejen - Dette gør at vi undgår unødvendige firkanter i listen
-                rectList.append(Rect(x, y, w, h))
-                # print("rectlist tilføjet"+str(len(rectList)))
-
-    # Indsæt område firkanter //KUN TIL DEBUG
-    cv2.rectangle(fram, (0, 0), (320, 720), (0, 255, 0), 2)
-    cv2.rectangle(fram, (640, 0), (960, 720), (0, 255, 0), 2)
-    cv2.rectangle(fram, (320, 0), (640, 240), (0, 255, 0), 2)
-    cv2.rectangle(fram, (320, 240), (640, 480), (0, 255, 0), 2)
-    cv2.rectangle(fram, (320, 480), (640, 720), (0, 255, 0), 2)
-    return fram, rectList
+frameWidth = imageWidth
+frameHeight = imageHeight
 
 
-def rectHandler():
-
-    global rectHandlerList
-    # Hvordan gør sammenligner vi trekanterne?
-    # lav kun denne hvis der er noget i vejen
-    left = 0
-    right = 0
-    for i in range(NUM_OF_FRAMES):
-
-        # print(temp[0].w)
-        # if len(temp) > 0: temp.pop(0)
-        print("STR PÅ LISTE"+str(type(rectHandlerList[i])))
-        print("range of rect per frame"+ str(len(rectHandlerList[i])))
-        for j in range(len(rectHandlerList[i])-1):
-            print(str(type(rectHandlerList[i][j]))+" tpe af recthandlist")
-            if type(rectHandlerList[i][j]) != Rect:
-                print("list should be empty "+rectHandlerList[i][j])
-
-                #håndterer hvis der ikke blev fundet nogen firkanter i framen
-
-                continue
-            # find centrum af firkanten
-            print("J is running")
-            # brug x til at finde ud af hvor meget der skal drejes
-            centX = rectHandlerList[i][j].x + (rectHandlerList[i][j].w / 2)
-            centY = rectHandlerList[i][j].y + (rectHandlerList[i][j].h / 2)
-
-            if centX > FRAME_CENT_X :
-                # drej til venstre for at undgå
-                left+=1
-                print("left ++ left is: "+str(left))
-            else:
-                # drej til højre for at undgå
-                right += 1
-                print("right++ right: "+str(right))
-                print("højre " + str(right) + "Venstre = " + str(left))
+global image_contour
+global direction
 
 
-    if (left > right):
-
-        #q bliver brugt som kommunikation mellem threads
-        q.put("L")
-
-        #LOCK indtil at der er drejet fra mapping metoden
-        print("Drej til venstre")
-        print("højre " + str(right) + "Venstre = " + str(left))
-    elif (left == 0 and right == 0) or left == right:
-        drone.land()
-        print("Value not reported run again")
-
-    else:
-        print("Drej til Højre")
-        print("højre " + str(right) + "Venstre = " + str(left))
-        q.put("R")
-
-    return
+def empty(a):
+    pass
 
 
+cv2.namedWindow("HSV")
+cv2.resizeWindow("HSV",640,240)
+cv2.createTrackbar("HUE Min","HSV",20,179,empty)
+cv2.createTrackbar("HUE Max","HSV",40,179,empty)
+cv2.createTrackbar("SAT Min","HSV",148,255,empty)
+cv2.createTrackbar("SAT Max","HSV",255,255,empty)
+cv2.createTrackbar("VALUE Min","HSV",89,255,empty)
+cv2.createTrackbar("VALUE Max","HSV",255,255,empty)
+
+cv2.namedWindow("Parameters")
+cv2.resizeWindow("Parameters",640,240)
+cv2.createTrackbar("Threshold1","Parameters",166,255,empty)
+cv2.createTrackbar("Threshold2","Parameters",171,255,empty)
+cv2.createTrackbar("Area","Parameters",1750,30000,empty)
 
 
-
-def displayMap(vals, points):
-    # Display map, mapping drone on screen
-    img = np.zeros((1000, 1000, 3), np.uint8)
-    points.append((vals[1], vals[2]))
-    cv2.circle(img, plot_point, 5, (0, 255, 0), cv2.FILLED)
-    img = draw_points(img, points)
-    return img
-
-def draw_points(img, points):
-    for point in points:
-        cv2.circle(img, point, 5, (0, 0, 255), cv2.FILLED)
-
-    cv2.circle(img, points[-1], 8, (255, 0, 0), cv2.FILLED)
-    cv2.putText(img, f'({(points[-1][0]-500)/100}, {-1*((points[-1][1]-500)/100)})m',
-                (points[-1][0]+10, points[-1][1]+30), cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 255), 1)
-    return img
-
-def mapping():
-    vals = [0, x, y] #[0] = speed [1] and [2] = x and y,
-    plot_point = [dest[0] + 500, -1 * dest[1] + 500]  # Destination point to plot in the window
-    points = [(0, 0), (0, 0)]  # Current location and previous locations used for plotting
-    drone.takeoff()
-    drone.streamon()
-    sleep(3)
-    yaw = 0
-    a = 270
-    # Show the map
-    img = displayMap(vals, points)
-    cv2.imshow("Output", img)
-    cv2.waitKey(1)
-    global q
-    q.put("FORWARD")
-
-    while True:
-        # print(drone.get_battery())
-        #sleep to make room for other thread
-        #sleep(3)
-        print(vals)
-        #TODO should make another calculation to find the finish spot if front is towards target, choose either left or right before turning
-        if not q.empty():
-
-            #få svar fra queue om hvad den skal gøre
-            svar = q.get()
-            print("queue is going through: "+str(svar))
-            if svar == "L":
-
-                #drej 90 grader til venstre
-                #og flyv en lille smule frem
-                #drone.rotate_counter_clockwise(90)
-                #drone.move_left(15)
-                drone.send_rc_control(-15,0,0,0)
-                distance = -distInterval
-                print("turning left")
-                #update yaw
-                # yaw = yaw - 90
-
-                # update map of drones current location TODO needs to be updated to update to the side
-                a += yaw
-                vals[1] += int(distance * math.cos(math.radians(a)))
-                vals[2] += int(distance * math.sin(math.radians(a)))
-
-            if svar == "R":
-                # drone.rotate_clockwise(90)
-                # yaw = yaw + 90
-                print("turning right")
-                #drone.move_right(15)
-                drone.send_rc_control(15,0,0,0)
-                distance = distInterval
-                # update map of drones current location
-                a += yaw
-                vals[1] += int(distance * math.cos(math.radians(a)))
-                vals[2] += int(distance * math.sin(math.radians(a)))
-
-
-            if svar == "FORWARD":
-                # skal dette i en funktion for sig selv?
-                location = [x, y]
-                destination = [dest[0], dest[1]]
-                destination_minus_location = [dest[0] - (location[0] - 500), dest[1] - (location[1] - 500)]
-
-                # Calculate angle differences current angle(forward) to angle towards destination
-                ang_adjust_radians = math.atan2(destination_minus_location[0], destination_minus_location[1])
-                ang_adjust_degrees = (180 / math.pi) * ang_adjust_radians
-
-                # print(ang_adjust_degrees)
-                # print(-ang_adjust_degrees)
-
-                # Change angle so drone points towards the destination point
-                if yaw != ang_adjust_degrees and ang_adjust_degrees > 0:
-                    drone.rotate_clockwise(int(ang_adjust_degrees))
-                    sleep(6)
-                    yaw = ang_adjust_degrees
-                elif yaw != ang_adjust_degrees and ang_adjust_degrees < 0:
-                    drone.rotate_counter_clockwise(int(-ang_adjust_degrees))
-                    sleep(6)
-                    yaw = ang_adjust_degrees
-
-                # Fly forward at the speed of 15 cm/s until destination is reached
-                distance = 0
-                if vals[1] >= plot_point[0] - 3 and vals[1] <= plot_point[0] + 3 and vals[2] >= plot_point[1] - 3 and \
-                        vals[2] <= plot_point[1] + 3:
-                    print("Landing")
-                    drone.streamoff()
-                    drone.land()
+def stackImages(sizeAdjustment, image_array):
+    rows = len(image_array)
+    cols = len(image_array[0])
+    rowsAvailable = isinstance(image_array[0], list)
+    width = image_array[0][0].shape[1]
+    height = image_array[0][0].shape[0]
+    if rowsAvailable:
+        for x in range ( 0, rows):
+            for y in range(0, cols):
+                if image_array[x][y].shape[:2] == image_array[0][0].shape [:2]:
+                    image_array[x][y] = cv2.resize(image_array[x][y], (0, 0), None, sizeAdjustment, sizeAdjustment)
                 else:
-                    vals[0] = 15
+                    image_array[x][y] = cv2.resize(image_array[x][y], (image_array[0][0].shape[1], image_array[0][0].shape[0]), None, sizeAdjustment, sizeAdjustment)
+                if len(image_array[x][y].shape) == 2: image_array[x][y]= cv2.cvtColor(image_array[x][y], cv2.COLOR_GRAY2BGR)
+        imageBlank = np.zeros((height, width, 3), np.uint8)
+        hor = [imageBlank]*rows
+        hor_con = [imageBlank]*rows
+        for x in range(0, rows):
+            hor[x] = np.hstack(image_array[x])
+        ver = np.vstack(hor)
+    else:
+        for x in range(0, rows):
+            if image_array[x].shape[:2] == image_array[0].shape[:2]:
+                image_array[x] = cv2.resize(image_array[x], (0, 0), None, sizeAdjustment, sizeAdjustment)
+            else:
+                image_array[x] = cv2.resize(image_array[x], (image_array[0].shape[1], image_array[0].shape[0]), None, sizeAdjustment, sizeAdjustment)
+            if len(image_array[x].shape) == 2: image_array[x] = cv2.cvtColor(image_array[x], cv2.COLOR_GRAY2BGR)
+        hor= np.hstack(image_array)
+        ver = hor
+    return ver
+
+
+def retrieve_contours(image, image_contour):
+    global direction
+    contours, hierarchy = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        areaMin = cv2.getTrackbarPos("Area", "Parameters")
+        if area > areaMin:
+            cv2.drawContours(image_contour, cnt, -1, (255, 0, 255), 7)
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+            #print(len(approx))
+            x , y , w, h = cv2.boundingRect(approx)
+            cx = int(x + (w / 2))  # CENTER X OF THE OBJECT
+            cy = int(y + (h / 2))  # CENTER Y OF THE OBJECT
+            #kris: deadzone removed
+            #if the object is large, use the center until it is out of the picture
+            if(x+h > 200):
+                if (cx < int(frameWidth / 2)):
+                    cv2.putText(image_contour, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (0, int(frameHeight / 2 - margin)),
+                                  (int(frameWidth / 2) - margin, int(frameHeight / 2) + margin), (0, 0, 255),
+                                  cv2.FILLED)
+                    direction = 1
+                elif (cx > int(frameWidth / 2)):
+                    cv2.putText(image_contour, " GO LEFT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (int(frameWidth / 2 + margin), int(frameHeight / 2 - margin)),
+                                  (frameWidth, int(frameHeight / 2) + margin), (0, 0, 255), cv2.FILLED)
+                    direction = 2
+
+            else:
+                if (int(frameWidth/2)-margin < x+w <int(frameWidth / 2)) :
+                    cv2.putText(image_contour, " GO RIGHT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (0, int(frameHeight / 2 - margin)), (int(frameWidth / 2) - margin, int(frameHeight / 2) + margin), (0, 0, 255), cv2.FILLED)
+                    direction = 1
+                elif (int(frameWidth/2) + margin > x > int(frameWidth / 2)):
+                    cv2.putText(image_contour, " GO LEFT ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (int(frameWidth / 2 + margin), int(frameHeight / 2 - margin)), (frameWidth, int(frameHeight / 2) + margin), (0, 0, 255), cv2.FILLED)
+                    direction = 2
+                elif (cy < int(frameHeight / 2) - margin):
+                    cv2.putText(image_contour, " GO UP ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (int(frameWidth / 2 - margin), 0), (int(frameWidth / 2 + margin), int(frameHeight / 2) - margin), (0, 0, 255), cv2.FILLED)
+                    direction = 3
+                elif (cy > int(frameHeight / 2) + margin):
+                    cv2.putText(image_contour, " GO DOWN ", (20, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 3)
+                    cv2.rectangle(image_contour, (int(frameWidth / 2 - margin), int(frameHeight / 2) + margin), (int(frameWidth / 2 + margin), frameHeight), (0, 0, 255), cv2.FILLED)
+                    direction = 4
+                else: direction=0
+
+            cv2.line(image_contour, (int(frameWidth / 2), int(frameHeight / 2)), (cx, cy), (0, 0, 255), 3)
+            cv2.rectangle(image_contour, (x, y), (x + w, y + h), (0, 255, 0), 5)
+            cv2.putText(image_contour, "Points: " + str(len(approx)), (x + w + 20, y + 20), cv2.FONT_HERSHEY_COMPLEX, .7, (0, 255, 0), 2)
+            cv2.putText(image_contour, "Area: " + str(int(area)), (x + w + 20, y + 45), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(image_contour, " " + str(int(x)) + " " + str(int(y)), (x - 20, y - 45), cv2.FONT_HERSHEY_COMPLEX, 0.7, (0, 255, 0), 2)
+        else: direction=0
+
+
+def display(droneFrames):
+    cv2.line(droneFrames, (int(frameWidth / 2) - margin, 0), (int(frameWidth / 2) - margin, frameHeight), (255, 255, 0), 3)
+    cv2.line(droneFrames, (int(frameWidth / 2) + margin, 0), (int(frameWidth / 2) + margin, frameHeight), (255, 255, 0), 3)
+    cv2.circle(droneFrames, (int(frameWidth / 2), int(frameHeight / 2)), 5, (0, 0, 255), 5)
+    cv2.line(droneFrames, (0, int(frameHeight / 2) - margin), (frameWidth, int(frameHeight / 2) - margin), (255, 255, 0), 3)
+    cv2.line(droneFrames, (0, int(frameHeight / 2) + margin), (frameWidth, int(frameHeight / 2) + margin), (255, 255, 0), 3)
+
+
+def draw_points(image, droneLocations):
+    for point in droneLocations:
+        cv2.circle(image, point, 5, (0, 0, 255), cv2.FILLED)
+
+    cv2.circle(image, droneLocations[-1], 8, (255, 0, 0), cv2.FILLED)
+    cv2.putText(image, f'({(droneLocations[-1][0] - 500) / 100}, {-1 * ((droneLocations[-1][1] - 500) / 100)})m',
+                (droneLocations[-1][0] + 10, droneLocations[-1][1] + 30), cv2.FONT_HERSHEY_PLAIN, 1, (255, 0, 255), 1)
+
+
+x = 500  # x start coordinate (500 since it´s the middle of the display width)
+y = 500  # y start coordinate (500 since it´s the middle of the display height)
+a = 0   # a is the angle from the y-axis in the positive direction when set to 270 degrees
+yaw = 0  # this is the angle offset from the current direction of the drone
+startRoute = 0  # Wait for this to become 1 before starting mapping and flight input
+dest = [int, int]
+
+print("Input the point where the drone has to go (in cm):\n")
+dest[0] = int(input("Input x: "))  # Destination x coordinate in cm
+dest[1] = int(input("Input y: "))  # Destination y coordinate in cm
+
+
+# Calculate the total distance to destination from drone´s current position in a straight line
+total_distance = dest[0] * dest[0] + dest[1] * dest[1]
+total_distance = math.sqrt(total_distance)
+print("total distance from start to distination:", total_distance)
+
+# Enable variables and drone take of
+plot_point = [dest[0] + 500, -1 * dest[1] + 500]  # Destination point to plot in the window
+points = [(0, 0), (0, 0)]  # Current location and previous locations used for plotting
+vals = [x, y]  # y are used as plotting points for drones current location
+drone.forBackSpeed = 0
+mapCounter = 0  # counter for updating map
+rotationTime = 0
+side_movement_count = 0
+forward_move_count = 0
+
+while True:
+    print(drone.get_battery())
+
+    # GET THE IMAGE FROM TELLO
+    readFrame = drone.get_frame_read()
+    droneFrame = readFrame.frame
+    image = cv2.resize(droneFrame, (imageWidth, imageHeight))
+    image_contour = image.copy()
+    image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    h_min = cv2.getTrackbarPos("HUE Min","HSV")
+    h_max = cv2.getTrackbarPos("HUE Max", "HSV")
+    s_min = cv2.getTrackbarPos("SAT Min", "HSV")
+    s_max = cv2.getTrackbarPos("SAT Max", "HSV")
+    v_min = cv2.getTrackbarPos("VALUE Min", "HSV")
+    v_max = cv2.getTrackbarPos("VALUE Max", "HSV")
+
+    lower = np.array([h_min,s_min,v_min])
+    upper = np.array([h_max,s_max,v_max])
+    mask = cv2.inRange(image_hsv, lower, upper)
+    result = cv2.bitwise_and(image, image, mask = mask)
+    mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+
+    imgBlur = cv2.GaussianBlur(result, (7, 7), 1)
+    imgGray = cv2.cvtColor(imgBlur, cv2.COLOR_BGR2GRAY)
+    threshold1 = cv2.getTrackbarPos("Threshold1", "Parameters")
+    threshold2 = cv2.getTrackbarPos("Threshold2", "Parameters")
+    imgCanny = cv2.Canny(imgGray, threshold1, threshold2)
+    kernel = np.ones((5, 5))
+    imgDil = cv2.dilate(imgCanny, kernel, iterations=1)
+    retrieve_contours(imgDil, image_contour)
+    display(image_contour)
+
+    if cv2.waitKey(1) & 0xFF == ord('f'):
+        startCounter = 0
+        startRoute = 1
+
+    # Display map, mapping drone on screen
+    img_map = np.zeros((1000, 1000, 3), np.uint8)
+    points.append((vals[0], vals[1]))
+    cv2.circle(img_map, plot_point, 5, (0, 255, 0), cv2.FILLED)
+    draw_points(img_map, points)
+
+    ################# FLIGHT
+    if startCounter == 0:
+        # Calculate distance from drone location to destination for x and y
+        destination = [dest[0], dest[1]]
+        destination_minus_location = [dest[0] - (vals[0] - 500), dest[1] - (vals[1] - 500)]
+
+        # Calculate angle differences current angle(forward) to angle towards destination
+        ang_adjust_radians = math.atan2(destination_minus_location[0], destination_minus_location[1])
+        ang_adjust_degrees = (180 / math.pi) * ang_adjust_radians
+        print("dest-location", destination_minus_location)
+        print("start up adjust angle", ang_adjust_degrees)
+        print("start yaw", yaw)
+        drone.takeoff()
+        sleep(4)
+        drone.move_up(20)
+
+        # Change angle so drone points towards the destination point
+        if yaw != ang_adjust_degrees and ang_adjust_degrees > 0:
+            drone.rotate_clockwise(int(ang_adjust_degrees))
+            sleep(6)
+            print("rotated?")
+            yaw = ang_adjust_degrees
+        elif yaw != ang_adjust_degrees and ang_adjust_degrees < 0:
+            drone.rotate_counter_clockwise(int(-ang_adjust_degrees))
+            sleep(6)
+            print("rotated?")
+            yaw = ang_adjust_degrees
+
+        startCounter = 1
+
+    distance = 0  # initialize distance for mapping
+
+    if startRoute == 1:
+        #Deadzone removed and yaw reversed
+        if direction == 1:
+            drone.forBackSpeed = 0
+            drone.leftRightSpeed = 15
+            a = 180
+            distance = -distInterval
+            side_movement_count += 1
+            forward_move_count += 4
+        elif direction == 2:
+            drone.forBackSpeed = 0
+            drone.leftRightSpeed = -15
+            a = -180
+            distance = distInterval
+            side_movement_count -= 1
+            forward_move_count -= 4
+        # elif dir == 3:
+            # me.up_down_velocity= 60
+        # elif dir == 4:
+            # me.up_down_velocity= -60
+        else:
+            # Fly forward at the speed of 15 cm/s until destination is reached
+            if vals[0] >= plot_point[0] - 3 and vals[0] <= plot_point[0] + 3 and vals[1] >= plot_point[1] - 3 and vals[1] <= plot_point[1] + 3:
+                print("Landing")
+                drone.land()
+            else:
+                if forward_move_count != 0:
+                    drone.leftRightSpeed = 0
+                    drone.forBackSpeed = 15
                     distance = distInterval
                     a = 270
-                drone.send_rc_control(0, vals[0], 0, 0)
-                sleep(2)
-                print(vals)
-                a += yaw
-                vals[1] += int(distance * math.cos(math.radians(a)))
-                vals[2] += int(distance * math.sin(math.radians(a)))
-
-            else:
-                drone.send_rc_control(0,0,0,0) #could not get image so we stop
-            #clear Q if there has been a turn
-
-            q.queue.clear()
-
-
-
-
-
-
-
-        # send command to drone with updated speed forward
-
-        #drone.send_rc_control(0,25,0,0)
-        print(vals)
-        #sleep(2)
-        displayMap(vals, points)
-        #sleep(interval)
-
-        #drone.send_rc_control(0,0,0,0)
-        #sleep(3)
-        #print("stop")
-        #drone.send_rc_control(0, 0,0,0) #should stop and wait for video input
-
-        #update the drones x and y coordinates TODO Where should this be located?
-       # vals[1] += int(distance * math.cos(math.radians(a)))
-       # vals[2] += int(distance * math.sin(math.radians(a)))
-
-        # Emergency type q to land and exit while loop
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            drone.streamoff()
-            drone.land()
-            print("landing")
-            break
-        drone.send_rc_control(0,0,0,0)
-        vision()
-        sleep(3)
-
-def vision():
-
-    # Størrelse på drone billedet er 720x960
-    #drone.streamon()
-
-    #cap = drone.get_video_capture()
-    # Vi kan lave områder på left fra (0,0) -> (720,320)   right fra (0,640) -> (720,960)   top fra (0,320)-> (240,640)    mid fra (240, 320) -> (480,640)   bot fra (480,320) -> (720,640)
-    #cap = cv2.VideoCapture(0)
-    #vent nogle sekunder på at dronen og mapping starter op  | måske lav et handshake mellem threads
-
-    currentframe = 1
-    global rectHandlerList
-    rectHandlerList.clear()
-
-    while True:
-        global AVOID_FLAG
-        # Får fat i en frame fra dronen, enten via drone eller webcam
-        #ret, frame = cap.read(0)
-        frame = drone.get_frame_read().frame
-        # vi laver en liste med rektangler, dette skal gøres hver frame
-        rectList = []
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 443,30)  # 5th parameter = pixel neighbourhood size, 6th parameter = finetuning     #note, vi kan fra tælle alle firkanter mindre end X
-            # thresh3 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 23,
-            #                               10)  # 5th parameter = pixel neighbourhood size HAS TO BE PRIME NUMBER, 6th parameter = finetuning     #note, vi kan fra tælle alle firkanter mindre end X
-        frame1, rectList = findcontours(thresh, frame, rectList)
-
-        cv2.imshow("adaptive - MEAN", frame1)  # MEAN fungerer umiddelbart bedst
-
-        if (rectList != 0):
-            rectHandlerList.append(rectList) #burde tilføje listen til den korrekte
+                    if forward_move_count > 0:
+                        forward_move_count -= 1
+                    else:
+                        forward_move_count += 1
+                elif side_movement_count != 0 and side_movement_count > 0 and forward_move_count == 0:
+                    drone.forBackSpeed = 0
+                    drone.leftRightSpeed = -15
+                    distance = distInterval
+                    a = -180
+                    side_movement_count -= 1
+                elif side_movement_count != 0 and side_movement_count < 0 and forward_move_count == 0:
+                    drone.forBackSpeed = 0
+                    drone.leftRightSpeed = 15
+                    distance = -distInterval
+                    a = 180
+                    side_movement_count += 1
+                else:
+                    drone.leftRightSpeed = 0
+                    drone.forBackSpeed = 15
+                    distance = distInterval
+                    a = 270
+    else:
+        drone.leftRightSpeed = 0
+        drone.forBackSpeed = 0
+        drone.upDownSpeed = 0
+        drone.yawSpeed = 0
 
 
-
-        if cv2.waitKey(1) == ord('q'):
-            drone.streamoff()
-            drone.land()
-            break
-        if AVOID_FLAG == 1:
-            if currentframe == NUM_OF_FRAMES:
-                # gennemgå listen med recthandler
-
-                rectHandler()
-
-                rectHandlerList.clear()
-
-                currentframe = 0
-                AVOID_FLAG = 0
-                return
-            currentframe += 1
-        else:
-            if currentframe == NUM_OF_FRAMES:
-                q.put("FORWARD")
-                return
-            #FORWARD gets interpreted by mapping function to just continue / there could be a smarter way to do this
-            currentframe += 1
+    if drone.send_rc_control:
+        drone.send_rc_control(drone.leftRightSpeed, drone.forBackSpeed, drone.upDownSpeed, drone.yawSpeed)
 
 
-    #cv2.destroyAllWindows()
+    # update map of drones current location
+    a += yaw
+    print("yaw: ", yaw)
+    print("angle: ", a)
+    print("dist: ", distance)
+    mapCounter += 1
+    if mapCounter == 4:
+        vals[0] += int(distance * math.cos(math.radians(a)))
+        vals[1] += int(distance * math.sin(math.radians(a)))
+        mapCounter = 0
+        print("vals: ", vals)
 
-    return
+    # SEND VELOCITY VALUES TO TELLO
+    stack = stackImages(0.9, ([image, result], [imgDil, image_contour]))
+    cv2.imshow('Horizontal Stacking', stack)
+    cv2.imshow("Output", img_map)
 
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        drone.land()
+        break
 
-if __name__ == "__main__":
-    ############## Start before parallelism ############
-    x = 500
-    y = 500
-    a = 0
-    yaw = 0
-    dest = [int, int]
-
-    print("Input the point where the drone has to go (in cm):\n")
-    dest[0] = int(input("Input x: "))
-    dest[1] = int(input("Input y: "))
-
-    #print(dist)
-
-    total_distance = dest[0] * dest[0] + dest[1] * dest[1]
-    total_distance = math.sqrt(total_distance)
-    print("total distance from start to destination:", total_distance)
-
-    plot_point = [dest[0] + 500, -1 * dest[1] + 500]
-
-
-    points = [(0, 0), (0, 0)]
-
-    ########## Start Parallelism ##########
-    drone = tello.Tello()
-    drone.connect()
-
-
-    # skal mainthread bare køre mapping selv og vision thread
-    #Thread_vision = th.Thread(target=vision, args=([cap]))
-    #Thread_vision.start()
-    mapping()
-#    process_vis = mp.Process(target=vision,args=([cap]))
- #   process_vis.start()
- #   mapping()
- #   process_vis.join()
+# cap.release()
+cv2.destroyAllWindows()
